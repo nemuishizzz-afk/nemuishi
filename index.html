@@ -380,6 +380,7 @@ button:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
 .title-foot .pill { background: rgba(251,243,230,.95); }
 .btn.big { font-size: 22px; padding: 12px 64px; box-shadow: 0 5px 0 var(--ink), 0 0 24px rgba(255,200,80,.6); }
 body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hidden; }
+#nameIn { font: inherit; font-weight: 800; font-size: 14px; border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; width: 180px; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
 /* 技の瞬間の、周りがすっと暗くなる演出 */
 #lines { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse 75% 60% at 50% 55%, rgba(0,0,0,0) 40%, rgba(8,5,18,.6) 100%); }
 [hidden] { display: none !important; }
@@ -519,6 +520,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
   <div class="overlay" id="rankOv" hidden>
     <div class="card">
       <h2>ランキング</h2>
+      <div class="row name-row"><input id="nameIn" maxlength="12" placeholder="ランキングに出す名前" autocomplete="off"><button class="btn sub" id="nameSave" type="button">決定</button></div>
       <div class="rank" id="rankList"><p>読み込み中…</p></div>
       <p class="small" id="rankNote"></p>
       <button class="btn sub" data-close type="button">もどる</button>
@@ -664,12 +666,26 @@ function saveP() {
   if (NO_SAVE) return;
   P.t = Date.now();
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(P)); } catch (e) {}
-  if (NET.db && NET.uid) {
+  if (NET.db && NET.uid && !NET.fb) {
     const body = JSON.parse(JSON.stringify(P));
     NET.chain = NET.chain.then(() => NET.db.doc(`data/users/${NET.uid}/save2`).set(body)).catch(() => {});
   }
 }
+
+const FB_CONFIG = {"apiKey": "AIzaSyDyIIrJxojmw6HykLZZICrSf519vsGrMrU", "authDomain": "nemuishi-game.firebaseapp.com", "projectId": "nemuishi-game", "storageBucket": "nemuishi-game.firebasestorage.app", "messagingSenderId": "635990540732", "appId": "1:635990540732:web:0939b7affa1cdc9811abb9"};
+async function loadFB() {
+  const add = (src) => new Promise((ok, ng) => { const t = document.createElement("script"); t.src = src; t.onload = ok; t.onerror = ng; document.head.appendChild(t); });
+  await add("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+  await add("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js");
+  firebase.initializeApp(FB_CONFIG);
+  NET.db = firebase.firestore(); NET.fb = true;
+  let id = null; try { id = localStorage.getItem("nemuishi-id"); } catch (e) {}
+  if (!id) { id = "p" + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); try { localStorage.setItem("nemuishi-id", id); } catch (e) {} }
+  NET.uid = id;
+}
 async function initNet() {
+  try { await loadFB(); } catch (e) {}
+  return;
   if (!window.claude || !window.claude.use) return;
   try {
     const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
@@ -785,60 +801,87 @@ function coatTexture(spec = {}) {
     const x = Math.random() * W;
     g.beginPath(); g.moveTo(x, 120 + Math.random() * 80); g.quadraticCurveTo(x + 20, 300, x - 10, H); g.stroke();
   }
-  g.fillStyle = "#c9a173";
-  g.beginPath(); g.moveTo(cx - 95, 0); g.lineTo(cx, 300); g.lineTo(cx + 95, 0); g.closePath(); g.fill();
-  g.strokeStyle = "rgba(122, 100, 80, .7)"; g.lineWidth = 6; g.lineJoin = "round";
-  [-1, 1].forEach((s) => {
-    g.beginPath(); g.moveTo(cx + s * 95, 0); g.lineTo(cx + s * 8, 300); g.stroke();
-    g.beginPath(); g.moveTo(cx + s * 140, 0); g.lineTo(cx + s * 150, 110); g.lineTo(cx + s * 70, 180); g.stroke();
-  });
-  g.strokeStyle = "rgba(122, 100, 80, .45)"; g.lineWidth = 4;
-  g.strokeRect(cx + 120, 190, 70, 50);
+  // 布の下のほうに、やわらかい影
+  const sh = g.createLinearGradient(0, 0, 0, H); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(60,40,30,.12)");
+  g.fillStyle = sh; g.fillRect(0, 0, W, H);
   return new THREE.CanvasTexture(c);
 }
 
 function buildNemuishi() {
+  // 三面図にあわせた体：大きな頭、ずんぐりした毛の体、前の開いた半袖の白衣、太い指の手足
   const root = new THREE.Group(), rig = new THREE.Group(), spin = new THREE.Group();
   root.add(rig); rig.add(spin);
-  const coat = new THREE.Mesh(new THREE.SphereGeometry(0.44, 32, 20), lam(0xffffff, { map: coatTexture() }));
-  coat.scale.set(1, 0.92, 0.95); coat.position.y = 0.43; coat.castShadow = true;
-  spin.add(coat);
+  const furMat = lam(0xffffff, { map: FUR_PLAIN }), clawMat = lam(0xf3e2c6), bellyMat = lam(0xe8cfa6, { map: FUR_PLAIN });
+  // 毛の体（白衣のすき間から、明るいおなかが見える）
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.4, 28, 20), furMat);
+  torso.scale.set(1, 1.02, 0.9); torso.position.y = 0.44; torso.castShadow = true; spin.add(torso);
+  addFur(torso, FUR_PLAIN, 8, 0.12);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 14), bellyMat);
+  belly.scale.set(0.95, 1.2, 0.55); belly.position.set(0, 0.42, -0.27); spin.add(belly);
+  addFur(belly, FUR_PLAIN, 6, 0.12);
+  // 前の開いた白衣（筒形で、正面だけ開けておく）
+  const coatMat = lam(0xffffff, { map: coatTexture(), side: THREE.DoubleSide });
+  const gap = 0.62;
+  const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.47, 0.56, 36, 1, true, Math.PI + gap, Math.PI * 2 - gap * 2), coatMat);
+  coat.position.y = 0.47; coat.castShadow = true; spin.add(coat);
+  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.405, 36, 10, Math.PI + gap, Math.PI * 2 - gap * 2, 0, Math.PI * 0.5), coatMat);
+  shoulder.scale.y = 0.45; shoulder.position.y = 0.74; spin.add(shoulder);
+  // えり
+  [-1, 1].forEach((s) => {
+    const lap = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.03), coatMat);
+    lap.position.set(s * 0.17, 0.66, -0.37); lap.rotation.set(-0.25, s * -0.5, s * 0.35); spin.add(lap);
+  });
+  // ポケット：下に2つ、胸に1つ（赤ペン入り）
+  const pocket = (ang, y, w, h) => {
+    const m = new THREE.Mesh(roundedBox(w, h, 0.03, 0.012), coatMat);
+    const r = 0.4 + (0.47 - 0.4) * (0.75 - (y - 0.19) / 0.56) + 0.012;
+    m.position.set(Math.sin(ang) * r, y, Math.cos(ang) * r); m.rotation.y = ang; spin.add(m); return m;
+  };
+  pocket(Math.PI + 0.95, 0.33, 0.17, 0.12); pocket(Math.PI - 0.95, 0.33, 0.17, 0.12);
+  const bp = pocket(Math.PI - 0.82, 0.6, 0.12, 0.1);
+  const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.11, 8), lam(0xd6302b)); pen.position.set(bp.position.x, 0.66, bp.position.z - 0.005); spin.add(pen);
+  // 頭（大きく）
   const headMat = lam(0xffffff, { map: FACE_SLEEPY.tex });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 48, 32), headMat);
-  head.position.y = 1.04; head.castShadow = true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.6, 48, 32), headMat);
+  head.position.y = 1.1; head.castShadow = true;
   spin.add(head);
-  const headShells = addFur(head, FACE_SLEEPY.tex, 16, 0.085);
+  const headShells = addFur(head, FACE_SLEEPY.tex, 16, 0.08);
   // 顔が暗く沈まないよう、絵そのものを少し光らせる
   for (const m of [headMat, ...headShells.map((x) => x.material)]) { m.emissive = new THREE.Color(0xffffff); m.emissiveIntensity = 0.3; m.emissiveMap = FACE_SLEEPY.tex; }
-  const hairMat = lam(0x5a4330);
-  [-0.1, 0, 0.1].forEach((x, i) => {
-    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(x * 0.5, 0.5, 0.06), new THREE.Vector3(x * 1.2, 0.69, 0.05), new THREE.Vector3(x * 2.4 + (i === 1 ? 0.05 : 0), 0.78, 0)]);
-    head.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 10, 0.022, 6), hairMat));
+  const hairMat = lam(0x5a3a22);
+  [-0.12, 0, 0.12].forEach((x, i) => {
+    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(x * 0.4, 0.58, 0.05), new THREE.Vector3(x * 1.2, 0.8, 0.04), new THREE.Vector3(x * 2.6 + (i === 1 ? 0.06 : 0), 0.9, 0)]);
+    head.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 10, 0.026, 6), hairMat));
   });
-  const sleeveMat = lam(0xf6f4ee), furMat = lam(0xffffff, { map: FUR_PLAIN });
+  // 腕：半袖＋毛の短い腕＋クリーム色の爪3本
+  const sleeveMat = lam(0xf6f4ee);
   const arms = [];
   [-1, 1].forEach((s) => {
-    const arm = new THREE.Group(); arm.position.set(s * 0.4, 0.62, 0);
-    const sleeve = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), sleeveMat);
-    sleeve.scale.set(0.9, 1.5, 0.9); sleeve.position.y = -0.12; sleeve.castShadow = true;
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), furMat); hand.position.y = -0.34;
-    addFur(hand, FUR_PLAIN, 8, 0.25);
-    arm.add(sleeve, hand); arm.rotation.z = s * 0.35;
+    const arm = new THREE.Group(); arm.position.set(s * 0.42, 0.66, 0);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.2, 16), sleeveMat); sleeve.position.y = -0.06; sleeve.castShadow = true;
+    const cuff = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 10), sleeveMat); cuff.scale.y = 0.7; cuff.position.y = 0.04;
+    const fore = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), furMat); fore.scale.set(1, 1.5, 1); fore.position.y = -0.22;
+    addFur(fore, FUR_PLAIN, 8, 0.25);
+    arm.add(sleeve, cuff, fore);
+    for (let k = -1; k <= 1; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.07, 8), clawMat); c.position.set(k * 0.04, -0.38, -0.04); c.rotation.x = Math.PI; arm.add(c); }
+    arm.rotation.z = s * 0.35;
     spin.add(arm); arms.push(arm);
   });
+  // 足：太い毛の足＋肉球の指3本
   [-1, 1].forEach((s) => {
-    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), furMat);
-    foot.scale.set(1, 0.6, 1.3); foot.position.set(s * 0.17, 0.05, -0.08);
-    addFur(foot, FUR_PLAIN, 6, 0.2);
-    spin.add(foot);
+    const leg = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 10), furMat);
+    leg.scale.set(1, 0.85, 1.1); leg.position.set(s * 0.18, 0.1, -0.02); leg.castShadow = true;
+    addFur(leg, FUR_PLAIN, 6, 0.2);
+    spin.add(leg);
+    for (let k = -1; k <= 1; k++) { const t = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8), clawMat); t.scale.set(1, 0.8, 1.2); t.position.set(s * 0.18 + k * 0.058, 0.035, -0.17); spin.add(t); }
   });
-  const padMat = lam(0xf3e2c6);
-  [-1, 1].forEach((s) => { for (let k = -1; k <= 1; k++) { const t = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), padMat); t.position.set(s * 0.17 + k * 0.05, 0.05, -0.22); spin.add(t); } });
   const held = new THREE.Mesh(roundedBox(0.38, 0.32, 0.14, 0.06), lam(0xb79be0));
-  held.position.set(-0.36, 0.5, -0.2); held.rotation.set(0.1, 0.4, 0.35); held.castShadow = true; spin.add(held);
-  const acc = new THREE.Group(); head.add(acc);
-  root.scale.setScalar(0.95);
-  return { root, rig, spin, head, headMat, headShells, arms, acc, held, coat, sleeveMat };
+  held.position.set(-0.4, 0.5, -0.22); held.rotation.set(0.1, 0.4, 0.35); held.castShadow = true; spin.add(held);
+  const acc = new THREE.Group(); acc.scale.setScalar(1.2); head.add(acc);
+  // くびのアイテムは、白衣の首まわりに合わせた位置に付ける
+  const neck = new THREE.Group(); neck.position.y = 1.24; neck.scale.set(1.32, 1, 1.32); spin.add(neck);
+  root.scale.setScalar(0.92);
+  return { root, rig, spin, head, headMat, headShells, arms, acc, neck, held, coat, sleeveMat };
 }
 
 /* ---- 着せ替え ---- */
@@ -963,7 +1006,9 @@ function buildAccessory(id) {
 }
 function applyEquip(n = ne, eq = P.eq) {
   while (n.acc.children.length) n.acc.remove(n.acc.children[0]);
-  for (const sl of ["head", "face", "neck"]) if (eq[sl]) n.acc.add(buildAccessory(eq[sl]));
+  while (n.neck.children.length) n.neck.remove(n.neck.children[0]);
+  for (const sl of ["head", "face"]) if (eq[sl]) n.acc.add(buildAccessory(eq[sl]));
+  if (eq.neck) n.neck.add(buildAccessory(eq.neck));
   const cs = COATS[eq.coat] || {};
   n.coat.material.map = coatTexture(cs); n.coat.material.emissive = new THREE.Color(cs.pattern === "gold" ? 0x3a2600 : cs.pattern === "rainbow" ? 0x221a2a : 0x000000); n.coat.material.needsUpdate = true;
   n.sleeveMat.color.setHex(cs.sleeve != null ? cs.sleeve : 0xf6f4ee);
@@ -3418,16 +3463,23 @@ async function submitScore() {
     const ref = NET.db.doc(`scores/${NET.uid}`);
     const snap = await ref.get();
     const prev = snap.exists ? snap.data().best || 0 : 0;
-    if (S.best > prev) await ref.set({ best: S.best, kos: S.kos, lv: P.lv, title: P.eq.title || null, at: Date.now() });
+    if (S.best > prev) await ref.set({ best: S.best, kos: S.kos, lv: P.lv, title: P.eq.title || null, name: (P.name || "").slice(0, 12), at: Date.now() });
   } catch (e) {}
 }
+$("nameSave").addEventListener("click", async () => {
+  const v = $("nameIn").value.trim().slice(0, 12);
+  P.name = v; saveP();
+  if (NET.db && NET.uid && P.best > 0) { try { await NET.db.doc(`scores/${NET.uid}`).set({ best: P.best, kos: 0, lv: P.lv, title: P.eq.title || null, name: v, at: Date.now() }); } catch (e) {} }
+  openRank();
+});
 async function openRank() {
   ui.rankOv.hidden = false;
+  $("nameIn").value = P.name || "";
   const list = $("rankList"), note = $("rankNote");
   list.innerHTML = "<p>読み込み中…</p>"; note.textContent = "";
   if (!NET.db) {
     list.innerHTML = `<div class="me"><span class="n">-</span><span class="who">あなたのベスト</span><span class="pts">${P.best}マス</span></div>`;
-    note.textContent = "みんなのランキングは準備中です。";
+    note.textContent = "ランキングを読み込めませんでした。電波のよいところでもう一度開いてください。";
     return;
   }
   const timer = setTimeout(() => { note.textContent = "ランキングの読み込みに時間がかかっています。"; }, 10000);
@@ -3442,7 +3494,7 @@ async function openRank() {
       const row = document.createElement("div");
       if (d.id === NET.uid) row.className = "me";
       const n = document.createElement("span"); n.className = "n"; n.textContent = k + 1;
-      const who = document.createElement("span"); who.className = "who"; const tt = ITEMS.find((it) => it.id === d.title); who.textContent = ((ps[d.id] && ps[d.id].name) || (d.id === NET.uid ? "あなた" : "だれか")) + (tt ? `（${tt.name}）` : "");
+      const who = document.createElement("span"); who.className = "who"; const tt = ITEMS.find((it) => it.id === d.title); who.textContent = ((ps[d.id] && ps[d.id].name) || d.name || (d.id === NET.uid ? "あなた" : "ななしのねむいし")) + (tt ? `（${tt.name}）` : "");
       const pts = document.createElement("span"); pts.className = "pts"; pts.textContent = `${d.best}マス`;
       row.append(n, who, pts); list.append(row);
     });
