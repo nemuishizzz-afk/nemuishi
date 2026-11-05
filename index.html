@@ -389,6 +389,15 @@ button:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
 .title-head { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .title-head .moves { max-width: 330px; }
 .title-head .moves span { background: rgba(36,26,60,.82); box-shadow: 0 2px 0 rgba(0,0,0,.3); }
+.env-pick { display: flex; gap: 6px; width: 100%; }
+.env-pick button { flex: 1; min-width: 0; border: 3px solid var(--ink); border-radius: 14px; padding: 6px 4px; background: rgba(251,243,230,.95); color: var(--ink); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; font-weight: 800; box-shadow: 0 3px 0 var(--ink); }
+.env-pick button b { font-family: var(--font-display); font-weight: 400; font-size: 14px; }
+.env-pick button small { font-size: 10px; opacity: .8; }
+.env-pick button.on { background: var(--night); color: #fff; }
+.env-pick button.on small { opacity: 1; color: #ffd447; }
+.env-pick button.lock { opacity: .55; cursor: default; }
+.env-pick button.env-night.on { background: #141a3a; }
+.env-pick button.env-sea.on { background: #0f5a8a; }
 .title-foot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; width: min(100%, 340px); }
 .title-foot .pill { background: rgba(251,243,230,.95); }
 .btn.big { font-size: 22px; padding: 12px 64px; box-shadow: 0 5px 0 var(--ink), 0 0 24px rgba(255,200,80,.6); }
@@ -489,6 +498,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
     </div>
     <div class="title-foot">
       <div class="stats"><span class="pill">Lv<span class="tLv">1</span></span><span class="pill"><span class="coin-ic"></span><span class="tCoins">0</span></span><span class="pill">ベスト <span class="tBest">0</span></span></div>
+      <div class="env-pick" id="envPick"></div>
       <button class="btn big" id="startBtn" type="button">あそぶ</button>
       <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button><button class="btn sub" id="howBtn" type="button">あそびかた</button></div>
       <button class="fb-link" id="fbBtnTitle" type="button">感想を送る</button>
@@ -511,7 +521,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
       </div>
       <button class="btn" id="retryBtn" type="button">もう一回</button>
       <button class="fb-link" id="fbBtnOver" type="button" hidden>感想を送る（30秒）</button>
-      <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button></div>
+      <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button><button class="btn sub" id="toTitleBtn" type="button">ステージ</button></div>
     </div>
   </div>
 
@@ -1129,6 +1139,12 @@ const carGeos = {
   tbody: roundedBox(2.5, 0.46, 0.86, 0.12), cargo: roundedBox(1.6, 0.78, 0.88, 0.08), tcab: roundedBox(0.62, 0.5, 0.8, 0.1),
 };
 function buildCar(truck) {
+  if (ENV.id === "sea") return buildFish(truck);
+  const r = buildCarRaw(truck);
+  if (ENV.id === "night") addHeadGlow(r.mesh, r.len);
+  return r;
+}
+function buildCarRaw(truck) {
   const g = new THREE.Group();
   const len = truck ? 2.5 : 1.45;
   const bodyMat = lam(CAR_COLORS[(Math.random() * CAR_COLORS.length) | 0]);
@@ -1174,7 +1190,7 @@ function buildAmbulance() {
   });
   return { mesh: g, len: 2.6 };
 }
-const charCar = (c) => c.mesh.traverse((o) => { if (o.isMesh && o.material !== lightMat) o.material = charMat; });
+const charCar = (c) => c.mesh.traverse((o) => { if (o.isMesh && o.material !== lightMat && o.material !== poolMat) o.material = charMat; });
 
 /* =========================================================
    地面（草・道路・川）とギミック
@@ -1213,6 +1229,8 @@ function rowType(i) {
   return r < 0.6 ? "road" : r < 0.82 ? "river" : "grass";
 }
 function makeTree(x) {
+  if (ENV.id === "sea") return makeSeaweed(x);
+  if (ENV.id === "night" && Math.random() < 0.3) return makeLamp(x);
   const t = new THREE.Group();
   const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 0.25; trunk.castShadow = true; t.add(trunk);
   const s = 0.8 + Math.random() * 0.5, m = leafMats[(Math.random() * 3) | 0];
@@ -1285,6 +1303,171 @@ function safeRow(r) {
   for (let k = 1; k <= 3; k++) if (r - k > 0 && rowTypeAt(r - k) === "grass") return r - k;
   while (rowTypeAt(r) === "river") r++;
   return clampBoss(r);
+}
+
+
+/* =========================================================
+   ステージ（環境）：昼の街・夜の街・海の底。レベルで解放、むずかしいぶんコインが多い
+   ========================================================= */
+const ENVS = {
+  day:   { id: "day",   name: "昼の街", lv: 1, mul: 1,   sky: "#bfe3f2", fog: [22, 42], hemi: [0xfff4e2, 0x6f9a62, 0.85], sun: [0xfff8ee, 0.85],
+           grass: [0x9ad673, 0x8fcc69], road: 0x5a6070, curb: 0xd2cdc2, dash: 0xf3f0e6, water: [0x4cb1e3, 0x0b3550, 0.25],
+           trunk: 0x8a6243, leaf: [0x4fae63, 0x5fbf6c, 0x46a35c], bark: 0x8a5a36, ring: 0xd8b07a, pole: 0x9a9a92, lamp: 0xfff1b0 },
+  night: { id: "night", name: "夜の街", lv: 3, mul: 1.5, sky: "#161c40", fog: [15, 33], hemi: [0x9aa8ff, 0x1c2440, 0.5], sun: [0xa8b8ff, 0.42],
+           grass: [0x40704c, 0x3a6846], road: 0x2f3344, curb: 0x7c7a86, dash: 0xe8e0a8, water: [0x24528a, 0x0a2a55, 0.55],
+           trunk: 0x4a3a30, leaf: [0x2f5e44, 0x386b4c, 0x2a5640], bark: 0x5a4030, ring: 0x9a7a55, pole: 0x6a6a72, lamp: 0xfff2a0 },
+  sea:   { id: "sea",   name: "海の底", lv: 6, mul: 2,   sky: "#0f5a8a", fog: [11, 30], hemi: [0xa8f4ff, 0x1a4a66, 0.8], sun: [0xc8f8ff, 0.65],
+           grass: [0xe8d6a0, 0xdecb92], road: 0x3a6c88, curb: 0xa8d8e0, dash: 0x9fe6f0, water: [0x0c2f5c, 0x021430, 0.6],
+           trunk: 0x8a6243, leaf: [0x4fae63, 0x5fbf6c, 0x46a35c], bark: 0x6f7f8a, ring: 0xb8c8cc, pole: 0x8fa6a8, lamp: 0xc8f8ff },
+};
+let ENV = ENVS.day;
+const envUnlocked = (e) => P.lv >= e.lv;
+function applyEnv(id) {
+  ENV = ENVS[id] && envUnlocked(ENVS[id]) ? ENVS[id] : ENVS.day;
+  SKY_DAY.set(ENV.sky); scene.background.copy(SKY_DAY); scene.fog.color.copy(SKY_DAY);
+  scene.fog.near = ENV.fog[0]; scene.fog.far = ENV.fog[1];
+  hemi.color.setHex(ENV.hemi[0]); hemi.groundColor.setHex(ENV.hemi[1]); hemi.intensity = ENV.hemi[2];
+  sun.color.setHex(ENV.sun[0]); sun.intensity = ENV.sun[1];
+  grassA.color.setHex(ENV.grass[0]); grassB.color.setHex(ENV.grass[1]);
+  roadMat.color.setHex(ENV.road); curbMat.color.setHex(ENV.curb); dashMat.color.setHex(ENV.dash);
+  waterMat.color.setHex(ENV.water[0]); waterMat.emissive.setHex(ENV.water[1]); waterMat.emissiveIntensity = ENV.water[2];
+  trunkMat.color.setHex(ENV.trunk); leafMats.forEach((m, k) => m.color.setHex(ENV.leaf[k]));
+  barkMat.color.setHex(ENV.bark); ringMat.color.setHex(ENV.ring); poleMat.color.setHex(ENV.pole); lightMat.color.setHex(ENV.lamp);
+  shadeMat.opacity = ENV.id === "day" ? 0.18 : 0.3;
+  envFx.player.intensity = ENV.id === "night" ? 1.1 : ENV.id === "sea" ? 0.5 : 0;
+  envFx.moon.visible = ENV.id === "night"; envFx.stars.visible = ENV.id === "night";
+  envFx.rays.visible = ENV.id === "sea";
+  document.body.dataset.env = ENV.id;
+}
+// 光るにじみ（ライト・月・泡）
+function envGlowTex() {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"); const gr = g.createRadialGradient(32, 32, 1, 32, 32, 31);
+  gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,.55)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
+}
+function bubbleTex() {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"); g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 4; g.beginPath(); g.arc(32, 32, 26, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = "rgba(255,255,255,.25)"; g.fill(); g.fillStyle = "rgba(255,255,255,.95)"; g.beginPath(); g.arc(22, 22, 6, 0, Math.PI * 2); g.fill();
+  return new THREE.CanvasTexture(c);
+}
+const GLOW = envGlowTex();
+const headGlowMat = new THREE.SpriteMaterial({ map: GLOW, color: 0xffe9a0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9 });
+const lampGlowMat = new THREE.SpriteMaterial({ map: GLOW, color: 0xffd98a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.85 });
+const poolMat = new THREE.MeshBasicMaterial({ map: GLOW, color: 0xffd98a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.45 });
+const envBubbleMat = new THREE.SpriteMaterial({ map: bubbleTex(), color: 0xdff8ff, transparent: true, depthWrite: false });
+const envFx = (() => {
+  const player = new THREE.PointLight(0xffe2a8, 0, 7, 1.6); scene.add(player);
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xfff6d8, transparent: true, depthWrite: false, fog: false }));
+  moon.scale.setScalar(9); scene.add(moon);
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xfffbea, fog: false, map: GLOW })); core.scale.setScalar(3.2); moon.add(core); core.scale.setScalar(0.38);
+  const sg = new THREE.BufferGeometry(); const pts = [];
+  for (let k = 0; k < 160; k++) pts.push((Math.random() - .5) * 90, 14 + Math.random() * 20, -Math.random() * 60);
+  sg.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  const stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.22, fog: false, transparent: true, opacity: 0.85 })); scene.add(stars);
+  // 海の底：上から差しこむ光の帯
+  const rays = new THREE.Group();
+  const rayMat = new THREE.MeshBasicMaterial({ color: 0xc8f8ff, transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  for (let k = 0; k < 7; k++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.2 + Math.random() * 1.6, 26), rayMat); m.position.set((k - 3) * 3.4 + Math.random(), 9, -4 - Math.random() * 8); m.rotation.set(0, Math.random() - .5, 0.35); rays.add(m); }
+  scene.add(rays);
+  return { player, moon, stars, rays, rayMat, bubT: 0 };
+})();
+function addHeadGlow(g, len) {
+  [-0.26, 0.26].forEach((z) => { const s = new THREE.Sprite(headGlowMat); s.scale.setScalar(0.9); s.position.set(len / 2 + 0.15, 0.45, z); g.add(s); });
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.3), poolMat); pool.rotation.x = -Math.PI / 2; pool.position.set(len / 2 + 1.5, 0.03, 0); g.add(pool);
+}
+function makeLamp(x) {
+  const t = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 2.2, 8), poleMat); post.position.y = 1.1; post.castShadow = true;
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.06), poleMat); arm.position.set(-Math.sign(x) * 0.22, 2.18, 0);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), lightMat); bulb.position.set(-Math.sign(x) * 0.44, 2.1, 0);
+  const glow = new THREE.Sprite(lampGlowMat); glow.scale.setScalar(1.6); glow.position.copy(bulb.position);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1.4, 20), poolMat); pool.rotation.x = -Math.PI / 2; pool.position.set(-Math.sign(x) * 0.44, 0.02, 0);
+  t.add(post, arm, bulb, glow, pool); t.position.x = x;
+  return t;
+}
+const weedMats = [lam(0x3fa66a), lam(0x5cbf7a), lam(0x2e8a62)], coralMats = [lam(0xff8a8a), lam(0xffb36a), lam(0xd98ae8), lam(0xff9ac8)];
+function makeSeaweed(x) {
+  const t = new THREE.Group();
+  if (Math.random() < 0.45) {
+    const m = coralMats[(Math.random() * coralMats.length) | 0];
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.5, 8), m); base.position.y = 0.25; base.castShadow = true; t.add(base);
+    for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.5 + Math.random() * 0.3, 7), m); const a = (k / 4) * Math.PI * 2;
+      b.position.set(Math.cos(a) * 0.14, 0.62, Math.sin(a) * 0.14); b.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); b.castShadow = true; t.add(b);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), m); tip.position.set(Math.cos(a) * 0.32, 0.86, Math.sin(a) * 0.32); t.add(tip); }
+  } else {
+    const n = 2 + ((Math.random() * 3) | 0);
+    for (let k = 0; k < n; k++) {
+      const blade = new THREE.Group(); blade.position.set((Math.random() - .5) * 0.5, 0, (Math.random() - .5) * 0.4);
+      const m = weedMats[(Math.random() * 3) | 0], segs = 4 + ((Math.random() * 3) | 0);
+      let parent = blade;
+      for (let q = 0; q < segs; q++) { const seg = new THREE.Group(); seg.position.y = q ? 0.32 : 0; parent.add(seg);
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), m); leaf.scale.set(1, 2.1, 0.45); leaf.position.y = 0.16; leaf.castShadow = true; seg.add(leaf); parent = seg; }
+      blade.userData.weed = { ph: Math.random() * 6 }; t.add(blade);
+    }
+    t.userData.weeds = true;
+  }
+  t.position.x = x;
+  return t;
+}
+function buildFish(big) {
+  const g = new THREE.Group();
+  const len = big ? 2.5 : 1.45;
+  const col = CAR_COLORS[(Math.random() * CAR_COLORS.length) | 0];
+  const m = lam(col), belly = lam(0xfbf6ea), fin = lam(new THREE.Color(col).multiplyScalar(0.75).getHex());
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 14), m); body.scale.set(len * 0.85, big ? 1.4 : 0.95, big ? 1.1 : 0.8); body.position.y = big ? 0.85 : 0.6; body.castShadow = true;
+  const bel = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), belly); bel.scale.copy(body.scale).multiplyScalar(1.01); bel.position.copy(body.position);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(big ? 0.55 : 0.36, big ? 0.7 : 0.5, 4), fin); tail.rotation.z = -Math.PI / 2; tail.scale.z = 0.3; tail.position.set(-len / 2 - (big ? 0.25 : 0.15), body.position.y, 0); tail.name = "tail";
+  const top = new THREE.Mesh(new THREE.ConeGeometry(big ? 0.3 : 0.2, big ? 0.6 : 0.4, 4), fin); top.scale.z = 0.3; top.position.set(-0.1, body.position.y + (big ? 0.7 : 0.45), 0); top.rotation.z = 0.5;
+  g.add(body, bel, tail, top);
+  [-1, 1].forEach((s) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.14 : 0.1, 10, 8), belly); eye.position.set(len * 0.3, body.position.y + 0.08, s * (big ? 0.42 : 0.3));
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.08 : 0.06, 8, 6), tireMat); pupil.position.set(len * 0.3 + 0.04, body.position.y + 0.08, s * (big ? 0.5 : 0.36));
+    g.add(eye, pupil);
+  });
+  g.userData.fish = { tail, ph: Math.random() * 6 };
+  return { mesh: g, len };
+}
+function updateEnv(realDt) {
+  const p = ne.root.position, tm = performance.now() / 1000;
+  envFx.player.position.set(p.x, 2.2, p.z + 0.6);
+  if (ENV.id === "night") { envFx.moon.position.set(p.x + 9, 17, p.z - 34); envFx.stars.position.set(p.x * 0.3, 0, p.z - 6); }
+  if (ENV.id === "sea") {
+    envFx.rays.position.set(p.x * 0.4, 0, p.z - 4); envFx.rayMat.opacity = 0.07 + Math.sin(tm * 0.8) * 0.025;
+    for (const c of cars) { const f = c.mesh.userData.fish; if (f && c.state === "drive") f.tail.rotation.y = Math.sin(tm * 9 + f.ph) * 0.5; }
+    for (const [, r] of rows) if (Math.abs(r.i - S.row) < 16) for (const t of r.group.children) if (t.userData.weeds) for (const b of t.children) {
+      const w = b.userData.weed; if (!w) continue; let seg = b.children[0], q = 0;
+      while (seg) { seg.rotation.z = Math.sin(tm * 1.6 + w.ph + q * 0.7) * 0.18; seg = seg.children.find((o) => o.isGroup); q++; }
+    }
+    envFx.bubT -= realDt;
+    if (envFx.bubT <= 0 && S.timeScale > 0) {
+      envFx.bubT = 0.18;
+      const s = new THREE.Sprite(envBubbleMat); s.position.set(p.x + (Math.random() - .5) * 16, 0.2, p.z - 2 - Math.random() * 14); const sz = 0.1 + Math.random() * 0.18; s.scale.setScalar(sz);
+      scene.add(s); envBubs.push({ s, vy: 0.8 + Math.random() * 0.9, ph: Math.random() * 6, life: 5 });
+    }
+  }
+  for (let k = envBubs.length - 1; k >= 0; k--) { const b = envBubs[k]; b.life -= realDt; b.s.position.y += b.vy * realDt; b.s.position.x += Math.sin(tm * 2 + b.ph) * 0.004;
+    if (b.life <= 0 || ENV.id !== "sea") { scene.remove(b.s); envBubs.splice(k, 1); } }
+}
+const envBubs = [];
+function renderEnvPick() {
+  const el = $("envPick"); if (!el) return;
+  el.innerHTML = "";
+  for (const e of Object.values(ENVS)) {
+    const b = document.createElement("button"); b.type = "button";
+    const open = envUnlocked(e);
+    b.className = `env-${e.id} ${ENV.id === e.id ? "on" : ""} ${open ? "" : "lock"}`;
+    b.innerHTML = `<b></b><small></small>`;
+    b.querySelector("b").textContent = open ? e.name : "？？？";
+    b.querySelector("small").textContent = open ? (e.mul > 1 ? `コイン×${e.mul}` : "ふつう") : `Lv${e.lv}で解放`;
+    b.addEventListener("click", () => {
+      if (!open) { showToast(`Lv${e.lv}で解放`, `レベル${e.lv}になると「${e.lv === 3 ? "夜" : "海"}」のステージで遊べる`); return; }
+      if (ENV.id === e.id || S.mode !== "title") return;
+      P.env = e.id; saveP(); applyEnv(e.id); resetWorld(); renderEnvPick(); sfx.ding();
+    });
+    el.append(b);
+  }
 }
 
 /* ---- 丸太 ---- */
@@ -2424,6 +2607,7 @@ function updateMeta() {
   $("titleMoves").innerHTML = unlockedMoves().map((m) => `<span>${m.name}</span>`).join("") + `<span class="ult">超必殺 ${ULT.name}</span>` + (next ? `<span class="lock">Lv${next.lv}で新しい技</span>` : "");
 }
 function gainCoins(n, pos) {
+  S.coinFrac = (S.coinFrac || 0) + n * ENV.mul; n = Math.floor(S.coinFrac); S.coinFrac -= n;
   P.coins += n; S.coinsRun += n;
   ui.coins.textContent = P.coins;
 }
@@ -2433,6 +2617,8 @@ function gainXP(n) {
   while (P.xp >= xpNeed(P.lv)) { P.xp -= xpNeed(P.lv); P.lv++; up = true;
     const learned = MOVES.find((m) => m.lv === P.lv);
     sfx.level();
+    const newEnv = Object.values(ENVS).find((e) => e.lv === P.lv);
+    if (newEnv) setTimeout(() => showToast("新しいステージ解放！", `「${newEnv.name}」をタイトルで選べるようになった`), 2800);
     if (learned && !P.moves.includes(learned.id)) {
       if (P.moves.length < 4) { P.moves.push(learned.id); showToast(`レベル ${P.lv} にアップ！`, `新しい技「${learned.name}」を覚えた！`); }
       else { P.pendingLearn = learned.id; showToast(`レベル ${P.lv} にアップ！`, `「${learned.name}」を覚えたがっている…！`); }
@@ -2486,6 +2672,10 @@ window.addEventListener("keydown", (e) => {
 });
 ui.btn.addEventListener("click", () => startSuper());
 $("startBtn").addEventListener("click", startGame);
+$("toTitleBtn").addEventListener("click", () => {
+  ui.overOv.hidden = true; resetWorld(); S.mode = "title"; document.body.classList.add("on-title");
+  renderEnvPick(); updateMeta(); ui.startOv.hidden = false;
+});
 $("retryBtn").addEventListener("click", () => { ui.overOv.hidden = true; resetWorld(); S.mode = "play"; updateHud(); });
 $("soundBtn").addEventListener("click", (e) => {
   soundOn = !soundOn;
@@ -3369,7 +3559,7 @@ function updateCamera(realDt) {
   const nc = (sp && NIGHTS[sp.kind]) || NIGHTS.spin;
   scene.background.copy(SKY_DAY).lerp(nc, night * 0.85);
   scene.fog.color.copy(scene.background);
-  hemi.intensity = 0.85 - night * 0.35; sun.intensity = 0.85 - night * 0.35;
+  hemi.intensity = ENV.hemi[2] - night * 0.35 * ENV.hemi[2]; sun.intensity = ENV.sun[1] - night * 0.35 * ENV.sun[1];
   const tint = sp && sp.kind === "dash" ? "74,21,32" : "36,31,74";
   ui.night.style.background = `radial-gradient(ellipse 70% 55% at 50% 55%, rgba(${tint},0) 30%, rgba(${tint},.8) 100%), rgba(${tint},.1)`;
   ui.night.style.opacity = (night * (closeup ? 0.3 : 1)).toFixed(3);
@@ -3412,6 +3602,7 @@ function frame(now) {
   updateBoss(dt, realDt);
   updateBalls(dt);
   updateParts(dt > 0 ? dt : realDt * 0.02);
+  updateEnv(realDt);
   updateRings(dt); updateDebris(dt); updateDecals(realDt); updatePillars(realDt);
   updateBolts(realDt); updateGhosts(realDt); updateAura(realDt); updateLines(realDt); updateSheep(dt);
   const halo = ne.acc.getObjectByName("halo"); if (halo) halo.rotation.z += realDt;
@@ -3709,6 +3900,8 @@ async function openRank() {
 }
 
 resize();
+applyEnv(P.env);
+renderEnvPick();
 resetWorld();
 requestAnimationFrame(frame);
 initNet();
