@@ -381,6 +381,11 @@ button:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
 .btn.big { font-size: 22px; padding: 12px 64px; box-shadow: 0 5px 0 var(--ink), 0 0 24px rgba(255,200,80,.6); }
 body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hidden; }
 #nameIn { font: inherit; font-weight: 800; font-size: 14px; border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; width: 180px; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
+/* リセット・名前 */
+.reset-link { background: none; border: none; color: #fff; font-size: 12px; font-weight: 800; text-decoration: underline; opacity: .85; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.6); padding: 4px; }
+.btn.danger { background: var(--red); color: #fff; }
+#overNameIn { font: inherit; font-weight: 800; font-size: 14px; border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; width: 180px; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
+.over-name { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 /* チュートリアル */
 .tut-card { gap: 10px; }
 .tut-step { font-size: 11px; font-weight: 800; color: #7c6e5c; letter-spacing: .1em; }
@@ -460,6 +465,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
       <div class="stats"><span class="pill">Lv<span class="tLv">1</span></span><span class="pill"><span class="coin-ic"></span><span class="tCoins">0</span></span><span class="pill">ベスト <span class="tBest">0</span></span></div>
       <button class="btn big" id="startBtn" type="button">あそぶ</button>
       <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button><button class="btn sub" id="howBtn" type="button">あそびかた</button></div>
+      <button class="reset-link" id="resetBtn" type="button">データをリセット</button>
     </div>
   </div>
 
@@ -472,6 +478,10 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
         <div><b id="resCoins">0</b><span>コイン</span></div>
       </div>
       <p id="resNote" class="small"></p>
+      <div class="over-name" id="overName" hidden>
+        <p class="small">名前を入れると、ランキングにのります</p>
+        <div class="row name-row"><input id="overNameIn" maxlength="12" placeholder="なまえ（12文字まで）" autocomplete="off"><button class="btn sub" id="overNameSave" type="button">決定</button></div>
+      </div>
       <button class="btn" id="retryBtn" type="button">もう一回</button>
       <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button></div>
     </div>
@@ -520,6 +530,15 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
   </div>
 
   <div class="tut-point" id="tutPoint" hidden>ここをタップ！</div>
+
+  <div class="overlay" id="resetOv" hidden>
+    <div class="card">
+      <h2>データをリセット</h2>
+      <p>レベル・コイン・覚えた技・着せ替え・ベスト記録が、すべて最初に戻ります。<br>元にはもどせません。</p>
+      <p class="small">ランキングにのった記録は残ります。</p>
+      <div class="row"><button class="btn sub" id="resetNo" type="button">やめる</button><button class="btn danger" id="resetYes" type="button">リセットする</button></div>
+    </div>
+  </div>
 
   <div class="overlay" id="clearOv" hidden>
     <div class="card">
@@ -3243,6 +3262,7 @@ function gameOver(title) {
     const next = MOVES.find((m) => m.lv > P.lv);
     ui.resNote.textContent = next ? `あと ${xpNeed(P.lv) - P.xp} 経験値でレベルアップ。Lv${next.lv}で「${next.name}」を覚える` : `あと ${xpNeed(P.lv) - P.xp} 経験値でレベルアップ`;
     updateMeta();
+    $("overName").hidden = !!P.name || S.best <= 0;
     ui.overOv.hidden = false;
     $("retryBtn").focus({ preventScroll: true });
   }, 1200);
@@ -3533,6 +3553,30 @@ async function submitScore() {
     if (S.best > prev) await ref.set({ best: S.best, kos: S.kos, lv: P.lv, title: P.eq.title || null, name: (P.name || "").slice(0, 12), at: Date.now() });
   } catch (e) {}
 }
+async function saveName(v) {
+  v = v.trim().slice(0, 12);
+  P.name = v; saveP();
+  if (NET.db && NET.uid && P.best > 0) { try { await NET.db.doc(`scores/${NET.uid}`).set({ best: P.best, kos: 0, lv: P.lv, title: P.eq.title || null, name: v, at: Date.now() }); } catch (e) {} }
+}
+$("overNameSave").addEventListener("click", async () => {
+  const v = $("overNameIn").value; if (!v.trim()) return;
+  await saveName(v);
+  $("overName").innerHTML = `<p class="small">「${""}」でランキングにのりました</p>`;
+  $("overName").querySelector("p").textContent = `「${P.name}」でランキングにのりました`;
+});
+// データのリセット
+$("resetBtn").addEventListener("click", () => { ui.startOv.hidden = true; $("resetOv").hidden = false; });
+$("resetNo").addEventListener("click", () => { $("resetOv").hidden = true; ui.startOv.hidden = false; });
+$("resetYes").addEventListener("click", async () => {
+  const keep = { tut: P.tut, tutBtn: P.tutBtn };
+  for (const k of Object.keys(P)) delete P[k];
+  Object.assign(P, { lv: 1, xp: 0, coins: 0, owned: [], eq: {}, best: 0, name: "", t: Date.now() }, keep);
+  fixMoves(); NO_SAVE = false; saveP();
+  try { localStorage.removeItem("nemuishi-id"); } catch (e) {}
+  $("resetYes").disabled = true; $("resetYes").textContent = "リセット中…";
+  try { await Promise.race([NET.chain, wait(3000)]); } catch (e) {}
+  location.reload();
+});
 $("nameSave").addEventListener("click", async () => {
   const v = $("nameIn").value.trim().slice(0, 12);
   P.name = v; saveP();
