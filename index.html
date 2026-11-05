@@ -395,6 +395,19 @@ button:focus-visible { outline: 3px solid var(--star); outline-offset: 3px; }
 body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hidden; }
 #nameIn { font: inherit; font-weight: 800; font-size: 14px; border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; width: 180px; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
 /* リセット・名前 */
+.fb-link { background: #fff; border: 3px solid var(--ink); border-radius: 999px; color: var(--ink); font-size: 13px; font-weight: 800; padding: 6px 16px; cursor: pointer; box-shadow: 0 3px 0 var(--ink); }
+.fb-link.hot { background: #ffd447; animation: fbhot 1.4s ease-in-out infinite; }
+@keyframes fbhot { 50% { transform: scale(1.06); } }
+.fb-card { gap: 10px; }
+.fb-card h2 { margin: 0; }
+.fb-q { width: 100%; text-align: left; font-weight: 800; font-size: 14px; margin: 4px 0 0; }
+.fb-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; width: 100%; }
+.fb-chips button { border: 2px solid var(--ink); border-radius: 999px; background: #fff; padding: 5px 11px; font-size: 13px; font-weight: 800; cursor: pointer; color: var(--ink); }
+.fb-chips button.on { background: var(--night); color: #fff; }
+.fb-stars button { font-size: 26px; padding: 0 4px; border: none; background: none; color: #d8d0c2; cursor: pointer; }
+.fb-stars button.on { color: #f2b632; text-shadow: 0 2px 0 #3b2a1e; }
+#fbText { width: 100%; min-height: 84px; border: 2px solid var(--ink); border-radius: 12px; padding: 8px 10px; font: inherit; font-size: 16px; resize: vertical; box-sizing: border-box; }
+.fb-count { width: 100%; text-align: right; font-size: 11px; margin-top: -6px; opacity: .7; }
 .reset-link { background: none; border: none; color: #fff; font-size: 12px; font-weight: 800; text-decoration: underline; opacity: .85; cursor: pointer; text-shadow: 0 1px 2px rgba(0,0,0,.6); padding: 4px; }
 .btn.danger { background: var(--red); color: #fff; }
 #overNameIn { font: inherit; font-weight: 800; font-size: 14px; border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; width: 180px; background: #fff; color: var(--ink); -webkit-user-select: text; user-select: text; }
@@ -478,6 +491,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
       <div class="stats"><span class="pill">Lv<span class="tLv">1</span></span><span class="pill"><span class="coin-ic"></span><span class="tCoins">0</span></span><span class="pill">ベスト <span class="tBest">0</span></span></div>
       <button class="btn big" id="startBtn" type="button">あそぶ</button>
       <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button><button class="btn sub" id="howBtn" type="button">あそびかた</button></div>
+      <button class="fb-link" id="fbBtnTitle" type="button">感想を送る</button>
       <button class="reset-link" id="resetBtn" type="button">データをリセット</button>
     </div>
   </div>
@@ -496,6 +510,7 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
         <div class="row name-row"><input id="overNameIn" maxlength="12" placeholder="なまえ（12文字まで）" autocomplete="off"><button class="btn sub" id="overNameSave" type="button">決定</button></div>
       </div>
       <button class="btn" id="retryBtn" type="button">もう一回</button>
+      <button class="fb-link" id="fbBtnOver" type="button" hidden>感想を送る（30秒）</button>
       <div class="row"><button class="btn sub" data-open="gacha" type="button">ガチャ</button><button class="btn sub" data-open="rank" type="button">ランキング</button></div>
     </div>
   </div>
@@ -543,6 +558,24 @@ body.on-title .dock, body.on-title .hud, body.on-title #bossBar { visibility: hi
   </div>
 
   <div class="tut-point" id="tutPoint" hidden>ここをタップ！</div>
+
+  <div class="overlay" id="fbOv" hidden>
+    <div class="card fb-card">
+      <h2>感想を送る</h2>
+      <p class="small">送った内容は、作った人だけが読みます。名前は送られません。</p>
+      <p class="fb-q">おもしろかった？</p>
+      <div class="fb-chips fb-stars" id="fbFun"></div>
+      <p class="fb-q">どこで飽きた？</p>
+      <div class="fb-chips" id="fbBored"></div>
+      <p class="fb-q">いちばん好きな技は？</p>
+      <div class="fb-chips" id="fbMove"></div>
+      <p class="fb-q">ひとこと（なくてもOK）</p>
+      <textarea id="fbText" maxlength="300" placeholder="ここがむずかしい、こうしてほしい、など"></textarea>
+      <div class="fb-count" id="fbCount">0 / 300</div>
+      <p class="small" id="fbMsg"></p>
+      <div class="row"><button class="btn sub" id="fbNo" type="button">もどる</button><button class="btn" id="fbSend" type="button">送る</button></div>
+    </div>
+  </div>
 
   <div class="overlay" id="resetOv" hidden>
     <div class="card">
@@ -2441,6 +2474,7 @@ stage.addEventListener("pointerup", (e) => {
 stage.addEventListener("pointercancel", () => (pDown = null));
 window.addEventListener("keydown", (e) => {
   const k = e.key;
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(k)) e.preventDefault();
   if (!$("tutOv").hidden && (k === "Enter" || k === " ")) { $("tutNext").click(); return; }
   if (S.mode === "title" && ui.startOv.hidden === false && (k === "Enter" || k === " ")) { startGame(); return; }
@@ -3270,7 +3304,7 @@ function updatePoles(dt) {
 }
 function playerRowNow() { if (!S.hop) return S.row; return S.hop.t < 0.5 ? S.hop.fr : S.hop.tr; }
 function gameOver(title) {
-  P.best = Math.max(P.best, S.best);
+  P.best = Math.max(P.best, S.best); P.plays = (P.plays || 0) + 1; S.lastBosses = bossIdx;
   saveP(); submitScore();
   setTimeout(() => {
     ui.overTitle.innerHTML = title;
@@ -3279,6 +3313,7 @@ function gameOver(title) {
     ui.resNote.textContent = next ? `あと ${xpNeed(P.lv) - P.xp} 経験値でレベルアップ。Lv${next.lv}で「${next.name}」を覚える` : `あと ${xpNeed(P.lv) - P.xp} 経験値でレベルアップ`;
     updateMeta();
     $("overName").hidden = !!P.name || S.best <= 0;
+    const fbb = $("fbBtnOver"); fbb.hidden = P.plays < 2; fbb.classList.toggle("hot", P.plays >= 3 && !P.fbSent);
     ui.overOv.hidden = false;
     $("retryBtn").focus({ preventScroll: true });
   }, 1200);
@@ -3579,6 +3614,48 @@ $("overNameSave").addEventListener("click", async () => {
   await saveName(v);
   $("overName").innerHTML = `<p class="small">「${""}」でランキングにのりました</p>`;
   $("overName").querySelector("p").textContent = `「${P.name}」でランキングにのりました`;
+});
+// 感想を送る
+const FB = { fun: 0, bored: "", move: "", from: null };
+const FB_BORED = ["すぐ飽きた", "最初のボスまで", "ボス戦", "院長のあと", "飽きなかった"];
+function fbChips(el, list, key) {
+  el.innerHTML = "";
+  list.forEach((v) => { const b = document.createElement("button"); b.type = "button"; b.textContent = v; if (FB[key] === v) b.className = "on";
+    b.addEventListener("click", () => { FB[key] = FB[key] === v ? "" : v; fbChips(el, list, key); }); el.append(b); });
+}
+function fbStars() {
+  const el = $("fbFun"); el.innerHTML = "";
+  for (let k = 1; k <= 5; k++) { const b = document.createElement("button"); b.type = "button"; b.textContent = "★"; b.setAttribute("aria-label", `${k}`); if (k <= FB.fun) b.className = "on";
+    b.addEventListener("click", () => { FB.fun = k; fbStars(); }); el.append(b); }
+}
+function openFb(from) {
+  FB.from = from; from.hidden = true; $("fbOv").hidden = false;
+  $("fbMsg").textContent = ""; $("fbSend").disabled = false; $("fbSend").textContent = "送る";
+  fbStars(); fbChips($("fbBored"), FB_BORED, "bored");
+  fbChips($("fbMove"), [...MOVES.map((m) => m.name), ULT.name, "救急車"], "move");
+}
+function closeFb() { $("fbOv").hidden = true; if (FB.from) FB.from.hidden = false; }
+$("fbBtnTitle").addEventListener("click", () => openFb(ui.startOv));
+$("fbBtnOver").addEventListener("click", () => openFb(ui.overOv));
+$("fbNo").addEventListener("click", closeFb);
+$("fbText").addEventListener("input", () => { $("fbCount").textContent = `${$("fbText").value.length} / 300`; });
+$("fbSend").addEventListener("click", async () => {
+  const text = $("fbText").value.trim().slice(0, 300);
+  if (!FB.fun && !FB.bored && !FB.move && !text) { $("fbMsg").textContent = "どれか1つだけでも選んでね"; return; }
+  if (!NET.db) { $("fbMsg").textContent = "いまは送れませんでした。電波のいいところでもう一度ためしてね"; return; }
+  $("fbSend").disabled = true; $("fbSend").textContent = "送信中…";
+  try {
+    await NET.db.collection("feedback").add({ fun: FB.fun, bored: FB.bored, move: FB.move, text, best: P.best | 0, plays: P.plays | 0, lv: P.lv | 0, bosses: S.lastBosses | 0, cleared: P.cleared | 0, at: Date.now() });
+    P.fbSent = (P.fbSent || 0) + 1; saveP();
+    Object.assign(FB, { fun: 0, bored: "", move: "" }); $("fbText").value = ""; $("fbCount").textContent = "0 / 300";
+    $("fbBtnOver").classList.remove("hot");
+    $("fbMsg").textContent = "ありがとう！ちゃんと届きました";
+    $("fbSend").textContent = "送りました";
+    setTimeout(closeFb, 1300);
+  } catch (e) {
+    $("fbSend").disabled = false; $("fbSend").textContent = "送る";
+    $("fbMsg").textContent = "送れませんでした。もう一度ためしてね";
+  }
 });
 // データのリセット
 $("resetBtn").addEventListener("click", () => { ui.startOv.hidden = true; $("resetOv").hidden = false; });
