@@ -1329,12 +1329,12 @@ const ENVS = {
   sea:   { id: "sea",   name: "海の底", lv: 6, mul: 2,   sky: "#0f5a8a", fog: [11, 30], hemi: [0xa8f4ff, 0x1a4a66, 0.8], sun: [0xc8f8ff, 0.65],
            grass: [0xe8d6a0, 0xdecb92], road: 0x3a6c88, curb: 0xa8d8e0, dash: 0x9fe6f0, water: [0x0c2f5c, 0x021430, 0.6],
            trunk: 0x8a6243, leaf: [0x4fae63, 0x5fbf6c, 0x46a35c], bark: 0x6f7f8a, ring: 0xb8c8cc, pole: 0x8fa6a8, lamp: 0xc8f8ff },
-  snow:  { id: "snow",  name: "雪の街", lv: 8, mul: 2,   sky: "#cfe0ee", fog: [16, 36], hemi: [0xffffff, 0x9fb4c8, 0.95], sun: [0xffffff, 0.7],
-           grass: [0xf4f8fc, 0xe9f0f7], road: 0x9cc4dc, curb: 0xffffff, dash: 0xffffff, water: [0x7fc8e8, 0x1a4a6a, 0.3],
+  snow:  { id: "snow",  name: "雪の街", lv: 8, mul: 2,   sky: "#b8cfe2", fog: [16, 36], hemi: [0xf4f8ff, 0x8aa2b8, 0.72], sun: [0xffffff, 0.55],
+           grass: [0xf2f6fa, 0xe6eef5], road: 0x6f9cbc, curb: 0xffffff, dash: 0xffffff, water: [0x7fc8e8, 0x1a4a6a, 0.3],
            trunk: 0x6a4a34, leaf: [0x2f6a52, 0x3a7a5e, 0x285e48], bark: 0xdff2ff, ring: 0xffffff, pole: 0x8a8a92, lamp: 0xfff1b0,
            note: "道がこおっていて、つるっとすべる" },
-  hosp:  { id: "hosp",  name: "病院の廊下", lv: 10, mul: 2, sky: "#e6efec", fog: [16, 36], hemi: [0xffffff, 0xc8d8d4, 1.0], sun: [0xffffff, 0.55],
-           grass: [0xe7eee8, 0xdfe8e1], road: 0xb9c8d4, curb: 0xffffff, dash: 0x4fb39f, water: [0x9fe3d8, 0x2a8a7a, 0.3],
+  hosp:  { id: "hosp",  name: "病院の廊下", lv: 10, mul: 2, sky: "#c9d8d4", fog: [16, 36], hemi: [0xffffff, 0xa8b8b4, 0.7], sun: [0xffffff, 0.45],
+           grass: [0xcfe0d2, 0xc4d8c8], road: 0x8496a8, curb: 0xffffff, dash: 0x4fb39f, water: [0x9fe3d8, 0x2a8a7a, 0.3],
            trunk: 0x8a6243, leaf: [0x4fae63, 0x5fbf6c, 0x46a35c], bark: 0xf4f6f8, ring: 0x8fc8e8, pole: 0xe8ecef, lamp: 0xfff8e8,
            note: "車のかわりにストレッチャーが走る" },
   space: { id: "space", name: "宇宙", lv: 12, mul: 2.5, sky: "#0b0820", fog: [18, 40], hemi: [0xb8b0ff, 0x2a2048, 0.7], sun: [0xffffff, 0.75],
@@ -1493,7 +1493,7 @@ function makeRock(x) {
   else { const m = crystalMats[(Math.random() * 3) | 0]; for (let k = 0; k < 3; k++) { const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.22 + Math.random() * 0.15, 0), m); c.scale.y = 2.2; c.position.set((k - 1) * 0.22, 0.4, (Math.random() - .5) * 0.2); c.rotation.z = (k - 1) * 0.35; c.castShadow = true; t.add(c); } }
   t.position.x = x; return t;
 }
-const sheetMat = lam(0xffffff), blanketMats = [lam(0x8fc8e8), lam(0xf2b6c8), lam(0x9fd8b8)], frameMat = lam(0xb8c0c8);
+const sheetMat = lam(0xf6f6f2), blanketMats = [lam(0x4f9fd8), lam(0xe8789a), lam(0x5fbf8a)], frameMat = lam(0x9aa4ae);
 function buildStretcher(big) {
   const g = new THREE.Group(); const len = big ? 2.5 : 1.45;
   const bed = new THREE.Mesh(roundedBox(len, 0.18, 0.82, 0.06), sheetMat); bed.position.y = 0.72; bed.castShadow = true;
